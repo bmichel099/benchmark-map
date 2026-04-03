@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Benchmark Map</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    :root {
+      --ink:     #1a1a1f;
+      --ink2:    #3a3a45;
+      --muted:   #8888a0;
+      --border:  #e0e0ec;
+      --surface: #f7f7fb;
+      --white:   #ffffff;
+      --accent:  #2b2b5e;
+      --panel-w: 360px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      display: flex; flex-direction: column;
+      height: 100vh; overflow: hidden;
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+    #header {
+      background: var(--accent);
+      color: var(--white);
+      padding: 0 20px;
+      height: 56px;
+      display: flex; align-items: center; gap: 20px;
+      flex-shrink: 0;
+      z-index: 1000;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    }
+    #header h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 18px; font-weight: 400;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+    #header h1 span { opacity: 0.5; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 300; margin-left: 8px; }
+
+    /* ── FILTER BAR ──────────────────────────────────────────── */
+    #filter-bar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 48px;
+      display: flex; align-items: center; gap: 10px;
+      flex-shrink: 0;
+      overflow-x: auto;
+      z-index: 999;
+    }
+    #filter-bar::-webkit-scrollbar { height: 3px; }
+    #filter-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    #filter-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--muted);
+      white-space: nowrap;
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 13px; border-radius: 20px;
+      border: 1.5px solid var(--border);
+      background: var(--white);
+      cursor: pointer; font-size: 12px; font-weight: 500;
+      color: var(--ink2);
+      transition: all 0.15s; white-space: nowrap;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .pill .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .pill:hover { border-color: var(--ink2); background: var(--surface); }
+    .pill.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
+    .pill.active .dot { border: 1.5px solid rgba(255,255,255,0.4); }
+    #count-badge {
+      margin-left: auto; white-space: nowrap;
+      font-size: 12px; color: var(--muted); flex-shrink: 0;
+    }
+
+    /* ── MAP WRAPPER ─────────────────────────────────────────── */
+    #map-wrap { flex: 1; display: flex; position: relative; overflow: hidden; }
+    #map { flex: 1; }
+
+    /* ── SIDE PANEL ──────────────────────────────────────────── */
+    #panel {
+      width: var(--panel-w);
+      background: var(--white);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+      position: absolute; right: 0; top: 0; bottom: 0;
+      z-index: 800;
+      box-shadow: -4px 0 20px rgba(0,0,0,0.08);
+    }
+    #panel.open { transform: translateX(0); }
+    #panel-close {
+      position: absolute; top: 14px; right: 16px;
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 20px; line-height: 1;
+      transition: color 0.15s;
+    }
+    #panel-close:hover { color: var(--ink); }
+    #panel-header {
+      padding: 24px 24px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #panel-city {
+      font-family: 'DM Serif Display', serif;
+      font-size: 22px; line-height: 1.2;
+      margin-bottom: 4px;
+    }
+    #panel-country {
+      font-size: 13px; color: var(--muted);
+    }
+    #panel-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+    .p-row { margin-bottom: 18px; }
+    .p-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1.2px; color: var(--muted); margin-bottom: 5px;
+    }
+    .p-value { font-size: 14px; color: var(--ink); line-height: 1.5; }
+    .p-project-badge {
+      display: inline-block; padding: 4px 12px; border-radius: 4px;
+      font-size: 13px; font-weight: 500; color: var(--white);
+    }
+    .tag {
+      display: inline-block;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 4px; padding: 3px 9px;
+      font-size: 12px; margin: 3px 3px 0 0;
+      color: var(--ink2);
+    }
+    .ppt-path {
+      font-size: 12px; color: var(--muted);
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 10px 12px;
+      word-break: break-all; line-height: 1.6;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ── ADD BUTTON ──────────────────────────────────────────── */
+    #add-btn {
+      position: absolute; bottom: 24px; right: 24px;
+      z-index: 900;
+      background: var(--accent);
+      color: var(--white);
+      border: none; border-radius: 30px;
+      padding: 12px 22px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(43,43,94,0.35);
+      display: flex; align-items: center; gap: 8px;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    #add-btn:hover { background: #3c3c80; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(43,43,94,0.4); }
+    #add-btn span { font-size: 18px; line-height: 1; }
+
+    /* ── LOADING OVERLAY ─────────────────────────────────────── */
+    #loading {
+      position: absolute; inset: 0; z-index: 2000;
+      background: rgba(247,247,251,0.92);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+    }
+    #loading.hidden { display: none; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-msg { font-size: 13px; color: var(--muted); }
+
+    /* ── LEAFLET OVERRIDES ───────────────────────────────────── */
+    .leaflet-popup-content-wrapper {
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+      border: 1px solid var(--border);
+    }
+    .leaflet-popup-content { margin: 0; }
+    .leaflet-popup-tip { background: white; }
+    .mini-popup { padding: 12px 16px; min-width: 160px; }
+    .mini-popup strong { font-size: 13px; font-weight: 600; display: block; }
+    .mini-popup small { font-size: 11px; color: var(--muted); }
+    .mini-popup .click-hint { font-size: 11px; color: var(--accent); margin-top: 6px; display: block; }
+
+    /* no attribution clutter */
+    .leaflet-control-attribution { font-size: 9px !important; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <h1>Benchmark Map <span>Urban Economics</span></h1>
+</div>
+
+<!-- FILTER BAR -->
+<div id="filter-bar">
+  <span id="filter-label">Project</span>
+  <button class="pill active" data-project="ALL" onclick="filterProject(this)">
+    <span class="dot" style="background:#666"></span> All
+  </button>
+  <!-- project pills injected here -->
+  <span id="count-badge">— case studies</span>
+</div>
+
+<!-- MAP + PANEL -->
+<div id="map-wrap">
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div id="loading-msg">Loading case studies…</div>
+  </div>
+
+  <div id="map"></div>
+
+  <!-- SIDE PANEL -->
+  <div id="panel">
+    <button id="panel-close" onclick="closePanel()">✕</button>
+    <div id="panel-header">
+      <div id="panel-city">—</div>
+      <div id="panel-country">—</div>
+    </div>
+    <div id="panel-body">
+      <div class="p-row">
+        <div class="p-label">Case Study Name</div>
+        <div class="p-value" id="p-name">—</div>
+      </div>
+      <div class="p-row">
+        <div class="p-label">Project</div>
+        <div id="p-project">—</div>
+      </div>
+      <div class="p-row">
+        <div class="p-label">Topics</div>
+        <div id="p-topics">—</div>
+      </div>
+      <div class="p-row">
+        <div class="p-label">PPT Location on Server</div>
+        <div class="ppt-path" id="p-ppt">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD BUTTON -->
+  <a id="add-btn" href="YOUR_GOOGLE_FORM_LINK" target="_blank">
+    <span>＋</span> Add Case Study
+  </a>
+
+</div><!-- end map-wrap -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CONFIGURATION  — edit these two lines
+// ═══════════════════════════════════════════════════════════
+const SHEET_CSV_URL = https://docs.google.com/spreadsheets/d/e/2PACX-1vSInLYcXsWJSrF00NPxKyMU7fibt7UQ9imBuwvVXxapcsuCSWxVf1Yjp-Lkfki1TeANX6lDmUPIC64x/pub?gid=0&single=true&output=csv;
+const FORM_URL      = https://forms.gle/JSodQBTWFCRyPAQy5;
+// ═══════════════════════════════════════════════════════════
+
+document.getElementById('add-btn').href = FORM_URL;
+
+// ── MAP SETUP ────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: false }).setView([20, 10], 2);
+L.control.zoom({ position: 'bottomleft' }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>',
+  maxZoom: 19
+}).addTo(map);
+
+// ── COLOUR PALETTE (project colours) ────────────────────────
+const PALETTE = [
+  '#e63946','#2a9d8f','#e9a800','#457b9d',
+  '#f4631e','#6a4c93','#0077b6','#d62828',
+  '#2dc653','#ff477e'
+];
+const PROJECT_COLORS = {};
+function projectColor(name) {
+  if (!PROJECT_COLORS[name]) {
+    const i = Object.keys(PROJECT_COLORS).length % PALETTE.length;
+    PROJECT_COLORS[name] = PALETTE[i];
+  }
+  return PROJECT_COLORS[name];
+}
+
+function makeIcon(color) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      width:14px;height:14px;border-radius:50%;
+      background:${color};
+      border:2.5px solid white;
+      box-shadow:0 1px 6px rgba(0,0,0,0.35);
+      cursor:pointer;
+      transition:transform .15s;
+    "></div>`,
+    iconSize: [14,14], iconAnchor: [7,7]
+  });
+}
+
+// ── GEOCODE CACHE (localStorage) ────────────────────────────
+const GEO_CACHE_KEY = 'benchmark_geocache_v1';
+function loadCache() {
+  try { return JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveCache(cache) {
+  try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(cache)); }
+  catch {}
+}
+const geoCache = loadCache();
+
+async function geocode(city, country) {
+  const key = `${city}|${country}`.toLowerCase();
+  if (geoCache[key]) return geoCache[key];
+  const q = encodeURIComponent(`${city}, ${country}`);
+  const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`;
+  try {
+    const res = await fetch(url, { headers: { 'Accept-Language': 'en' }});
+    const data = await res.json();
+    if (data && data[0]) {
+      const result = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      geoCache[key] = result;
+      saveCache(geoCache);
+      return result;
+    }
+  } catch {}
+  return null;
+}
+
+// Rate-limited sequential geocoding queue (Nominatim: max 1 req/sec)
+async function geocodeAll(items) {
+  const results = [];
+  for (let i = 0; i < items.length; i++) {
+    const { row, idx } = items[i];
+    const key = `${row['City']}|${row['Country']}`.toLowerCase();
+    const cached = geoCache[key];
+    if (cached) {
+      results.push({ row, coords: cached, idx });
+    } else {
+      document.getElementById('loading-msg').textContent =
+        `Locating ${row['City']}… (${i+1}/${items.length})`;
+      const coords = await geocode(row['City'], row['Country']);
+      results.push({ row, coords, idx });
+      if (i < items.length - 1) await new Promise(r => setTimeout(r, 1100)); // rate limit
+    }
+  }
+  return results;
+}
+
+// ── STATE ────────────────────────────────────────────────────
+let allMarkers = [];
+let activeProject = 'ALL';
+
+// ── FILTERS ──────────────────────────────────────────────────
+function buildProjectFilters(projects) {
+  const bar = document.getElementById('filter-bar');
+  const badge = document.getElementById('count-badge');
+  projects.forEach(p => {
+    const color = projectColor(p);
+    const btn = document.createElement('button');
+    btn.className = 'pill';
+    btn.dataset.project = p;
+    btn.innerHTML = `<span class="dot" style="background:${color}"></span> ${p}`;
+    btn.onclick = () => filterProject(btn);
+    bar.insertBefore(btn, badge);
+  });
+}
+
+function filterProject(btn) {
+  document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeProject = btn.dataset.project;
+  let count = 0;
+  allMarkers.forEach(({ marker, data }) => {
+    const show = activeProject === 'ALL' || data['Project'] === activeProject;
+    if (show) { marker.addTo(map); count++; }
+    else map.removeLayer(marker);
+  });
+  document.getElementById('count-badge').textContent =
+    `${count} case stud${count===1?'y':'ies'}`;
+  closePanel();
+}
+
+// ── SIDE PANEL ───────────────────────────────────────────────
+function openPanel(data, color) {
+  document.getElementById('panel-city').textContent    = data['City'] || '—';
+  document.getElementById('panel-country').textContent = data['Country'] || '—';
+  document.getElementById('p-name').textContent        = data['Case Study Name'] || '—';
+
+  const badge = document.getElementById('p-project');
+  badge.innerHTML = `<span class="p-project-badge" style="background:${color}">${data['Project'] || '—'}</span>`;
+
+  const topics = (data['Topics'] || '').split(',').map(t => t.trim()).filter(Boolean);
+  document.getElementById('p-topics').innerHTML =
+    topics.length ? topics.map(t => `<span class="tag">${t}</span>`).join('') : '—';
+
+  document.getElementById('p-ppt').textContent = data['PPT Path'] || '—';
+
+  document.getElementById('panel').classList.add('open');
+}
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+}
+
+// ── LOAD DATA ────────────────────────────────────────────────
+async function loadData() {
+  Papa.parse(SHEET_CSV_URL, {
+    download: true, header: true, skipEmptyLines: true,
+    complete: async function(results) {
+      const rows = results.data.filter(r => r['City'] && r['Country']);
+
+      // Assign project colours up front
+      const projects = [...new Set(rows.map(r => r['Project']).filter(Boolean))];
+      projects.forEach(p => projectColor(p));
+      buildProjectFilters(projects);
+
+      // Geocode all
+      const items = rows.map((row, idx) => ({ row, idx }));
+      const geocoded = await geocodeAll(items);
+
+      // Place markers
+      geocoded.forEach(({ row, coords }) => {
+        if (!coords) return;
+        const color = projectColor(row['Project']);
+        const marker = L.marker([coords.lat, coords.lng], { icon: makeIcon(color) });
+
+        marker.bindPopup(`
+          <div class="mini-popup">
+            <strong>${row['Case Study Name'] || row['City']}</strong>
+            <small>${row['City']}, ${row['Country']}</small>
+            <span class="click-hint">Click dot to see details →</span>
+          </div>`, { closeButton: false, offset: [0, -4] });
+
+        marker.on('mouseover', function() { this.openPopup(); });
+        marker.on('mouseout',  function() { this.closePopup(); });
+        marker.on('click', function() { openPanel(row, color); });
+
+        marker.addTo(map);
+        allMarkers.push({ marker, data: row });
+      });
+
+      const total = allMarkers.length;
+      document.getElementById('count-badge').textContent =
+        `${total} case stud${total===1?'y':'ies'}`;
+      document.getElementById('loading').classList.add('hidden');
+    },
+    error: function() {
+      document.getElementById('loading-msg').textContent =
+        '⚠ Could not load data. Check your Sheet URL.';
+    }
+  });
+}
+
+loadData();
+</script>
+</body>
+</html>
