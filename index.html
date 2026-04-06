@@ -5,82 +5,80 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Benchmark Map</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     :root {
-      --ink:     #1a1a1f;
-      --ink2:    #3a3a45;
-      --muted:   #8888a0;
-      --border:  #e0e0ec;
-      --surface: #f7f7fb;
-      --white:   #ffffff;
-      --accent:  #2b2b5e;
-      --panel-w: 360px;
+      --ink:     #1a1a1a;
+      --ink2:    #444;
+      --muted:   #999;
+      --border:  #e0e0e0;
+      --border-strong: #000;
+      --surface: #f5f5f5;
+      --white:   #fff;
+      --accent:  #000;
+      --panel-w: 340px;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Open Sans', sans-serif;
       display: flex; flex-direction: column;
       height: 100vh; overflow: hidden;
-      background: var(--surface);
-      color: var(--ink);
+      background: #fff; color: var(--ink);
     }
 
     /* ── HEADER ─────────────────────────────────────────────── */
     #header {
-      background: var(--accent);
-      color: var(--white);
-      padding: 0 20px;
-      height: 56px;
-      display: flex; align-items: center; gap: 20px;
-      flex-shrink: 0;
-      z-index: 1000;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+      background: #000; color: #fff;
+      padding: 0 28px; height: 48px;
+      display: flex; align-items: center;
+      flex-shrink: 0; z-index: 1000;
     }
     #header h1 {
-      font-family: 'DM Serif Display', serif;
-      font-size: 18px; font-weight: 400;
-      letter-spacing: 0.3px;
+      font-family: 'Open Sans', sans-serif;
+      font-size: 12px; font-weight: 300;
+      letter-spacing: 3px; text-transform: uppercase;
       white-space: nowrap;
     }
-    #header h1 span { opacity: 0.5; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 300; margin-left: 8px; }
 
     /* ── FILTER BAR ──────────────────────────────────────────── */
     #filter-bar {
-      background: var(--white);
-      border-bottom: 1px solid var(--border);
-      padding: 0 20px;
-      height: 48px;
-      display: flex; align-items: center; gap: 10px;
-      flex-shrink: 0;
-      overflow-x: auto;
-      z-index: 999;
+      background: #fff;
+      border-bottom: 1px solid #000;
+      padding: 0 0 0 28px;
+      height: 44px;
+      display: flex; align-items: stretch; gap: 0;
+      flex-shrink: 0; overflow-x: auto; z-index: 999;
     }
-    #filter-bar::-webkit-scrollbar { height: 3px; }
-    #filter-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    #filter-bar::-webkit-scrollbar { height: 2px; }
+    #filter-bar::-webkit-scrollbar-thumb { background: #000; }
     #filter-label {
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 1px; color: var(--muted);
-      white-space: nowrap;
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 2px;
+      color: #aaa; white-space: nowrap;
+      display: flex; align-items: center;
+      margin-right: 16px; flex-shrink: 0;
     }
     .pill {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 4px 13px; border-radius: 20px;
-      border: 1.5px solid var(--border);
-      background: var(--white);
-      cursor: pointer; font-size: 12px; font-weight: 500;
-      color: var(--ink2);
-      transition: all 0.15s; white-space: nowrap;
-      font-family: 'DM Sans', sans-serif;
+      display: inline-flex; align-items: center;
+      padding: 0 18px; height: 100%;
+      border: none; border-right: 1px solid #e0e0e0;
+      background: transparent;
+      cursor: pointer; font-size: 11px; font-weight: 400;
+      letter-spacing: 0.5px; color: #666;
+      transition: background 0.12s, color 0.12s;
+      white-space: nowrap;
+      font-family: 'Open Sans', sans-serif;
+      border-radius: 0;
     }
-    .pill .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .pill:hover { border-color: var(--ink2); background: var(--surface); }
-    .pill.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
-    .pill.active .dot { border: 1.5px solid rgba(255,255,255,0.4); }
+    .pill:hover { background: #f5f5f5; color: #000; }
+    .pill.active { background: #000; color: #fff; }
     #count-badge {
       margin-left: auto; white-space: nowrap;
-      font-size: 12px; color: var(--muted); flex-shrink: 0;
+      font-size: 10px; color: #aaa; flex-shrink: 0;
+      letter-spacing: 1px; padding: 0 24px;
+      display: flex; align-items: center;
+      text-transform: uppercase;
     }
 
     /* ── MAP WRAPPER ─────────────────────────────────────────── */
@@ -90,181 +88,176 @@
     /* ── SIDE PANEL ──────────────────────────────────────────── */
     #panel {
       width: var(--panel-w);
-      background: var(--white);
-      border-left: 1px solid var(--border);
+      background: #fff;
+      border-left: 1px solid #000;
       display: flex; flex-direction: column;
       transform: translateX(100%);
-      transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+      transition: transform 0.25s ease;
       position: absolute; right: 0; top: 0; bottom: 0;
       z-index: 800;
-      box-shadow: -4px 0 20px rgba(0,0,0,0.08);
     }
     #panel.open { transform: translateX(0); }
     #panel-close {
-      position: absolute; top: 14px; right: 16px;
+      position: absolute; top: 16px; right: 20px;
       background: none; border: none; cursor: pointer;
-      color: var(--muted); font-size: 20px; line-height: 1;
-      transition: color 0.15s;
+      color: #bbb; font-size: 16px; line-height: 1;
+      font-family: 'Open Sans', sans-serif;
+      transition: color 0.12s;
     }
-    #panel-close:hover { color: var(--ink); }
+    #panel-close:hover { color: #000; }
     #panel-header {
-      padding: 24px 24px 16px;
-      border-bottom: 1px solid var(--border);
+      padding: 28px 28px 20px;
+      border-bottom: 1px solid #e0e0e0;
       flex-shrink: 0;
     }
     #panel-city {
-      font-family: 'DM Serif Display', serif;
-      font-size: 22px; line-height: 1.2;
-      margin-bottom: 4px;
+      font-family: 'Open Sans', sans-serif;
+      font-size: 24px; font-weight: 300;
+      letter-spacing: -0.5px; line-height: 1.2;
+      margin-bottom: 6px; color: #000;
     }
-    #panel-country { font-size: 13px; color: var(--muted); }
+    #panel-country {
+      font-size: 10px; color: #999;
+      text-transform: uppercase; letter-spacing: 2px;
+    }
     #panel-body { padding: 0; overflow-y: auto; flex: 1; }
 
-    /* List view — multiple studies in a city */
+    /* List view */
     .study-card {
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
-      cursor: pointer;
-      transition: background 0.12s;
+      padding: 18px 28px;
+      border-bottom: 1px solid #e8e8e8;
+      cursor: pointer; transition: background 0.1s;
     }
-    .study-card:hover { background: var(--surface); }
-    .study-card-name { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
+    .study-card:hover { background: #f9f9f9; }
+    .study-card-name {
+      font-size: 13px; font-weight: 600;
+      color: #000; margin-bottom: 8px; line-height: 1.4;
+    }
     .study-card-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .study-card-project {
-      display: inline-block; padding: 2px 9px; border-radius: 4px;
-      font-size: 11px; font-weight: 500; color: var(--white);
+      display: inline-block; padding: 2px 8px;
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.8px; color: #fff;
     }
-    .study-card-arrow { margin-left: auto; color: var(--muted); font-size: 14px; }
+    .study-card-arrow { margin-left: auto; color: #ccc; font-size: 18px; font-weight: 300; }
 
-    /* Detail view — single study */
+    /* Detail view */
     #detail-back {
-      display: none;
-      align-items: center; gap: 6px;
+      display: none; align-items: center; gap: 6px;
       background: none; border: none; cursor: pointer;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 12px; color: var(--muted);
-      padding: 14px 24px 0;
-      transition: color 0.15s;
+      font-family: 'Open Sans', sans-serif;
+      font-size: 10px; font-weight: 600; color: #999;
+      text-transform: uppercase; letter-spacing: 1.5px;
+      padding: 18px 28px 0; transition: color 0.12s;
     }
-    #detail-back:hover { color: var(--ink); }
+    #detail-back:hover { color: #000; }
     #detail-back.visible { display: flex; }
-    #detail-body { padding: 20px 24px; }
-    .p-row { margin-bottom: 18px; }
+    #detail-body { padding: 24px 28px; }
+    .p-row { margin-bottom: 24px; }
     .p-label {
-      font-size: 10px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 1.2px; color: var(--muted); margin-bottom: 5px;
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 2px;
+      color: #aaa; margin-bottom: 7px;
     }
-    .p-value { font-size: 14px; color: var(--ink); line-height: 1.5; }
+    .p-value { font-size: 13px; color: #000; line-height: 1.6; font-weight: 300; }
     .p-project-badge {
-      display: inline-block; padding: 4px 12px; border-radius: 4px;
-      font-size: 13px; font-weight: 500; color: var(--white);
+      display: inline-block; padding: 3px 10px;
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.8px; color: #fff;
     }
     .tag {
       display: inline-block;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 4px; padding: 3px 9px;
-      font-size: 12px; margin: 3px 3px 0 0; color: var(--ink2);
+      background: #fff; border: 1px solid #ddd;
+      padding: 3px 10px; font-size: 11px;
+      margin: 3px 3px 0 0; color: #555;
+      letter-spacing: 0.3px;
     }
-    /* clickable topic tags in detail panel */
-    .tag.clickable {
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .tag.clickable:hover {
-      background: var(--accent); border-color: var(--accent);
-      color: var(--white);
-    }
-    .tag.active-topic {
-      background: var(--accent); border-color: var(--accent);
-      color: var(--white); font-weight: 600;
-    }
-    .tag.clickable::after { content: ' ↗'; font-size: 10px; opacity: 0.6; }
+    .tag.clickable { cursor: pointer; transition: all 0.12s; }
+    .tag.clickable:hover { background: #000; border-color: #000; color: #fff; }
+    .tag.active-topic { background: #000; border-color: #000; color: #fff; font-weight: 600; }
+    .tag.clickable::after { content: ' ↗'; font-size: 9px; opacity: 0.45; }
     .ppt-path {
-      font-size: 12px; color: var(--muted);
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 6px; padding: 10px 12px;
-      word-break: break-all; line-height: 1.6;
-      font-family: 'Courier New', monospace;
+      font-size: 11px; color: #777;
+      background: #f8f8f8; border: 1px solid #e8e8e8;
+      padding: 10px 12px; word-break: break-all;
+      line-height: 1.6; font-family: 'Courier New', monospace;
     }
 
     /* ── ADD BUTTON ──────────────────────────────────────────── */
     #add-btn {
-      position: absolute; bottom: 24px; right: 24px;
-      z-index: 900;
-      background: var(--accent);
-      color: var(--white);
-      border: none; border-radius: 30px;
-      padding: 12px 22px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 13px; font-weight: 500;
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(43,43,94,0.35);
-      display: flex; align-items: center; gap: 8px;
-      transition: all 0.2s;
-      text-decoration: none;
+      position: absolute; bottom: 28px; right: 28px;
+      z-index: 900; background: #000; color: #fff;
+      border: none; padding: 13px 22px;
+      font-family: 'Open Sans', sans-serif;
+      font-size: 10px; font-weight: 600;
+      letter-spacing: 2px; text-transform: uppercase;
+      cursor: pointer; display: flex; align-items: center; gap: 10px;
+      transition: background 0.15s; text-decoration: none;
     }
-    #add-btn:hover { background: #3c3c80; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(43,43,94,0.4); }
-    #add-btn span { font-size: 18px; line-height: 1; }
+    #add-btn:hover { background: #333; }
+    #add-btn span { font-size: 18px; font-weight: 300; line-height: 1; }
 
-    /* ── LOADING OVERLAY ─────────────────────────────────────── */
+    /* ── LOADING ─────────────────────────────────────────────── */
     #loading {
       position: absolute; inset: 0; z-index: 2000;
-      background: rgba(247,247,251,0.92);
+      background: rgba(255,255,255,0.96);
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 14px;
+      align-items: center; justify-content: center; gap: 16px;
       pointer-events: none;
     }
     #loading.hidden { display: none; }
     .spinner {
-      width: 36px; height: 36px;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
+      width: 22px; height: 22px;
+      border: 1.5px solid #ddd; border-top-color: #000;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #loading-msg { font-size: 13px; color: var(--muted); }
+    #loading-msg {
+      font-size: 10px; color: #aaa;
+      letter-spacing: 2px; text-transform: uppercase;
+    }
 
     /* ── EMPTY STATE ─────────────────────────────────────────── */
     #empty-state {
-      position: absolute; bottom: 80px; left: 50%;
-      transform: translateX(-50%);
-      z-index: 700;
-      background: var(--white);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px 24px;
-      text-align: center;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-      pointer-events: none;
-      display: none;
+      position: absolute; bottom: 88px; left: 50%;
+      transform: translateX(-50%); z-index: 700;
+      background: #fff; border: 1px solid #000;
+      padding: 16px 28px; text-align: center;
+      pointer-events: none; display: none;
     }
     #empty-state.visible { display: block; }
-    #empty-state p { font-size: 13px; color: var(--muted); }
-    #empty-state strong { display: block; font-size: 14px; color: var(--ink2); margin-bottom: 4px; }
+    #empty-state strong { display: block; font-size: 12px; font-weight: 600; color: #000; margin-bottom: 4px; letter-spacing: 0.5px; }
+    #empty-state p { font-size: 11px; color: #999; }
 
     /* ── LEAFLET OVERRIDES ───────────────────────────────────── */
     .leaflet-popup-content-wrapper {
-      border-radius: 10px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.12);
-      border: 1px solid var(--border);
+      border-radius: 0;
+      box-shadow: none;
+      border: 1px solid #000;
     }
     .leaflet-popup-content { margin: 0; }
-    .leaflet-popup-tip { background: white; }
-    .mini-popup { padding: 12px 16px; min-width: 160px; }
-    .mini-popup strong { font-size: 13px; font-weight: 600; display: block; }
-    .mini-popup small { font-size: 11px; color: var(--muted); }
-    .mini-popup .click-hint { font-size: 11px; color: var(--accent); margin-top: 6px; display: block; }
-
-    /* no attribution clutter */
+    .leaflet-popup-tip-container { display: none; }
+    .mini-popup { padding: 14px 18px; min-width: 160px; }
+    .mini-popup strong { font-size: 12px; font-weight: 600; display: block; letter-spacing: 0.3px; margin-bottom: 3px; }
+    .mini-popup small { font-size: 10px; color: #999; display: block; }
+    .mini-popup .click-hint {
+      font-size: 10px; color: #000; margin-top: 8px; display: block;
+      text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+    }
     .leaflet-control-attribution { font-size: 9px !important; }
+    .leaflet-control-zoom a {
+      border-radius: 0 !important;
+      border: 1px solid #000 !important;
+      font-weight: 300 !important;
+    }
   </style>
 </head>
 <body>
 
 <!-- HEADER -->
 <div id="header">
-  <h1>Benchmark Map <span>Urban Economics</span></h1>
+  <h1>Benchmark Map</h1>
 </div>
 
 <!-- FILTER BAR -->
@@ -399,7 +392,7 @@ function makeClusterIcon(count, color) {
   const label = count > 1 ? `<span style="
     position:absolute;inset:0;display:flex;align-items:center;
     justify-content:center;color:white;font-weight:600;
-    font-size:${fontSize}px;font-family:'DM Sans',sans-serif;
+    font-size:${fontSize}px;font-family:'Open Sans',sans-serif;
     line-height:1;letter-spacing:-0.5px;
   ">${count}</span>` : '';
   return L.divIcon({
