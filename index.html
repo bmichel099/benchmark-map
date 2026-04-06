@@ -322,7 +322,7 @@
 // ═══════════════════════════════════════════════════════════
 //  CONFIGURATION  — edit these two lines
 // ═══════════════════════════════════════════════════════════
-const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSInLYcXsWJSrF00NPxKyMU7fibt7UQ9imBuwvVXxapcsuCSWxVf1Yjp-Lkfki1TeANX6lDmUPIC64x/pub?gid=1530269309&single=true&output=csv"
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSInLYcXsWJSrF00NPxKyMU7fibt7UQ9imBuwvVXxapcsuCSWxVf1Yjp-Lkfki1TeANX6lDmUPIC64x/pub?gid=1530269309&single=true&output=csv";
 const FORM_URL      = "https://forms.gle/JSodQBTWFCRyPAQy5";
 // ═══════════════════════════════════════════════════════════
 
@@ -481,7 +481,7 @@ function renderMarkers(rows) {
 
     // If all studies belong to the same project → use that color
     // If mixed projects → use the dark accent
-    const uniqueProjects = [...new Set(studies.map(s => s['Project']).filter(Boolean))];
+    const uniqueProjects = [...new Set(studies.map(s => s['Associated project']).filter(Boolean))];
     const color = uniqueProjects.length === 1
       ? projectColor(uniqueProjects[0])
       : 'var(--accent)';
@@ -492,7 +492,7 @@ function renderMarkers(rows) {
     });
 
     // Hover tooltip
-    const preview = studies.slice(0, 3).map(s => s['Case Study Name']).join('<br>');
+    const preview = studies.slice(0, 3).map(s => s['Case study name']).join('<br>');
     const more = count > 3 ? `<span style="color:var(--muted);font-size:11px">+ ${count-3} more…</span>` : '';
     marker.bindPopup(`
       <div class="mini-popup">
@@ -506,7 +506,7 @@ function renderMarkers(rows) {
     marker.on('click', function() {
       this.closePopup();
       if (count === 1) {
-        openDetailPanel(studies[0], projectColor(studies[0]['Project']), false);
+        openDetailPanel(studies[0], projectColor(studies[0]['Associated project']), false);
       } else {
         openListPanel(city, country, studies);
       }
@@ -542,7 +542,7 @@ function filterProject(btn) {
   const project = btn.dataset.project;
   const filtered = project === 'ALL'
     ? allRows
-    : allRows.filter(({ row }) => row['Project'] === project);
+    : allRows.filter(({ row }) => row['Associated project'] === project);
   renderMarkers(filtered);
   closePanel();
 }
@@ -559,14 +559,14 @@ function openListPanel(city, country, studies) {
   body.style.display = 'block';
   document.getElementById('detail-body').style.display = 'none';
   body.innerHTML = studies.map((s, i) => {
-    const color = projectColor(s['Project']);
-    const topics = (s['Topics'] || '').split(',').slice(0,2).map(t => t.trim()).filter(Boolean);
+    const color = projectColor(s['Associated project']);
+    const topics = (s['Topics covered (comma-separated)'] || '').split(',').slice(0,2).map(t => t.trim()).filter(Boolean);
     const topicTags = topics.map(t => `<span class="tag" style="font-size:10px;padding:2px 6px">${t}</span>`).join('');
     return `
       <div class="study-card" onclick="openDetailPanel(window._studies[${i}], '${color}', true)">
-        <div class="study-card-name">${s['Case Study Name'] || '—'}</div>
+        <div class="study-card-name">${s['Case study name'] || '—'}</div>
         <div class="study-card-meta">
-          <span class="study-card-project" style="background:${color}">${s['Project'] || '—'}</span>
+          <span class="study-card-project" style="background:${color}">${s['Associated project'] || '—'}</span>
           ${topicTags}
           <span class="study-card-arrow">›</span>
         </div>
@@ -591,14 +591,14 @@ function openDetailPanel(data, color, showBack) {
   const detailBody = document.getElementById('detail-body');
   detailBody.style.display = 'block';
 
-  document.getElementById('p-name').textContent = data['Case Study Name'] || '—';
+  document.getElementById('p-name').textContent = data['Case study name'] || '—';
   document.getElementById('p-project').innerHTML =
-    `<span class="p-project-badge" style="background:${color}">${data['Project'] || '—'}</span>`;
+    `<span class="p-project-badge" style="background:${color}">${data['Associated project'] || '—'}</span>`;
 
-  const topics = (data['Topics'] || '').split(',').map(t => t.trim()).filter(Boolean);
+  const topics = (data['Topics covered (comma-separated)'] || '').split(',').map(t => t.trim()).filter(Boolean);
   document.getElementById('p-topics').innerHTML =
     topics.length ? topics.map(t => `<span class="tag">${t}</span>`).join('') : '—';
-  document.getElementById('p-ppt').textContent = data['PPT Path'] || '—';
+  document.getElementById('p-ppt').textContent = data['PPT path on server'] || '—';
 
   document.getElementById('panel').classList.add('open');
 }
@@ -634,7 +634,7 @@ async function loadData() {
       if (rows.length === 0) { hideLoading(); showEmpty(); return; }
 
       // Assign project colours up front
-      const projects = [...new Set(rows.map(r => r['Project']).filter(Boolean))];
+      const projects = [...new Set(rows.map(r => r['Associated project']).filter(Boolean))];
       projects.forEach(p => projectColor(p));
       buildProjectFilters(projects);
 
