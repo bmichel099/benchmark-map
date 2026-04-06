@@ -171,6 +171,7 @@
       background: rgba(247,247,251,0.92);
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 14px;
+      pointer-events: none;
     }
     #loading.hidden { display: none; }
     .spinner {
@@ -182,6 +183,24 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     #loading-msg { font-size: 13px; color: var(--muted); }
+
+    /* ── EMPTY STATE ─────────────────────────────────────────── */
+    #empty-state {
+      position: absolute; bottom: 80px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 700;
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 24px;
+      text-align: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      pointer-events: none;
+      display: none;
+    }
+    #empty-state.visible { display: block; }
+    #empty-state p { font-size: 13px; color: var(--muted); }
+    #empty-state strong { display: block; font-size: 14px; color: var(--ink2); margin-bottom: 4px; }
 
     /* ── LEAFLET OVERRIDES ───────────────────────────────────── */
     .leaflet-popup-content-wrapper {
@@ -225,6 +244,11 @@
     <div id="loading-msg">Loading case studies…</div>
   </div>
 
+  <div id="empty-state">
+    <strong>No case studies yet</strong>
+    <p>Use the "+ Add Case Study" button to add your first one.</p>
+  </div>
+
   <div id="map"></div>
 
   <!-- SIDE PANEL -->
@@ -255,7 +279,7 @@
   </div>
 
   <!-- ADD BUTTON -->
-  <a id="add-btn" href="YOUR_GOOGLE_FORM_LINK" target="_blank">
+  <a id="add-btn" href="https://forms.gle/JSodQBTWFCRyPAQy5" target="_blank">
     <span>＋</span> Add Case Study
   </a>
 
@@ -267,19 +291,42 @@
 // ═══════════════════════════════════════════════════════════
 //  CONFIGURATION  — edit these two lines
 // ═══════════════════════════════════════════════════════════
-const SHEET_CSV_URL = https://docs.google.com/spreadsheets/d/e/2PACX-1vSInLYcXsWJSrF00NPxKyMU7fibt7UQ9imBuwvVXxapcsuCSWxVf1Yjp-Lkfki1TeANX6lDmUPIC64x/pub?gid=0&single=true&output=csv;
-const FORM_URL      = https://forms.gle/JSodQBTWFCRyPAQy5;
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSInLYcXsWJSrF00NPxKyMU7fibt7UQ9imBuwvVXxapcsuCSWxVf1Yjp-Lkfki1TeANX6lDmUPIC64x/pub?gid=0&single=true&output=csv";
+const FORM_URL      = "https://forms.gle/JSodQBTWFCRyPAQy5";
 // ═══════════════════════════════════════════════════════════
 
 document.getElementById('add-btn').href = FORM_URL;
 
 // ── MAP SETUP ────────────────────────────────────────────────
+// Initialise map immediately — basemap loads independently of data
 const map = L.map('map', { zoomControl: false }).setView([20, 10], 2);
 L.control.zoom({ position: 'bottomleft' }).addTo(map);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '© <a href="https://www.openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>',
-  maxZoom: 19
-}).addTo(map);
+
+// Primary tile layer (CartoDB light)
+const primaryTiles = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  { attribution: '© <a href="https://www.openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>', maxZoom: 19 }
+);
+// Fallback tile layer (OpenStreetMap) in case CartoDB is blocked
+const fallbackTiles = L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors', maxZoom: 19 }
+);
+
+primaryTiles.addTo(map);
+
+// If the first tile errors, swap to OSM
+let tilesFailed = 0;
+primaryTiles.on('tileerror', () => {
+  tilesFailed++;
+  if (tilesFailed === 3) { // switch after 3 failures to avoid flapping
+    map.removeLayer(primaryTiles);
+    fallbackTiles.addTo(map);
+  }
+});
+
+// Force Leaflet to recalculate size once layout is settled
+setTimeout(() => map.invalidateSize(), 100);
 
 // ── COLOUR PALETTE (project colours) ────────────────────────
 const PALETTE = [
@@ -417,18 +464,39 @@ function closePanel() {
 }
 
 // ── LOAD DATA ────────────────────────────────────────────────
+function hideLoading() {
+  document.getElementById('loading').classList.add('hidden');
+}
+function showEmpty() {
+  document.getElementById('empty-state').classList.add('visible');
+  document.getElementById('count-badge').textContent = '0 case studies';
+}
+
 async function loadData() {
+  // If URL hasn't been configured yet, show the map with empty state
+  if (!SHEET_CSV_URL || SHEET_CSV_URL === 'YOUR_GOOGLE_SHEET_CSV_PUBLISH_URL') {
+    hideLoading();
+    showEmpty();
+    return;
+  }
+
   Papa.parse(SHEET_CSV_URL, {
     download: true, header: true, skipEmptyLines: true,
     complete: async function(results) {
       const rows = results.data.filter(r => r['City'] && r['Country']);
+
+      if (rows.length === 0) {
+        hideLoading();
+        showEmpty();
+        return;
+      }
 
       // Assign project colours up front
       const projects = [...new Set(rows.map(r => r['Project']).filter(Boolean))];
       projects.forEach(p => projectColor(p));
       buildProjectFilters(projects);
 
-      // Geocode all
+      // Geocode all — map is already visible while this runs
       const items = rows.map((row, idx) => ({ row, idx }));
       const geocoded = await geocodeAll(items);
 
@@ -456,11 +524,15 @@ async function loadData() {
       const total = allMarkers.length;
       document.getElementById('count-badge').textContent =
         `${total} case stud${total===1?'y':'ies'}`;
-      document.getElementById('loading').classList.add('hidden');
+      hideLoading();
+      if (total === 0) showEmpty();
     },
-    error: function() {
+    error: function(err) {
+      console.error('PapaParse error', err);
       document.getElementById('loading-msg').textContent =
-        '⚠ Could not load data. Check your Sheet URL.';
+        '⚠ Could not load data. Check your Sheet URL is published as CSV.';
+      // Still hide spinner and let basemap be usable
+      setTimeout(hideLoading, 3000);
     }
   });
 }
