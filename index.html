@@ -117,10 +117,38 @@
       font-size: 22px; line-height: 1.2;
       margin-bottom: 4px;
     }
-    #panel-country {
-      font-size: 13px; color: var(--muted);
+    #panel-country { font-size: 13px; color: var(--muted); }
+    #panel-body { padding: 0; overflow-y: auto; flex: 1; }
+
+    /* List view — multiple studies in a city */
+    .study-card {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.12s;
     }
-    #panel-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+    .study-card:hover { background: var(--surface); }
+    .study-card-name { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
+    .study-card-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .study-card-project {
+      display: inline-block; padding: 2px 9px; border-radius: 4px;
+      font-size: 11px; font-weight: 500; color: var(--white);
+    }
+    .study-card-arrow { margin-left: auto; color: var(--muted); font-size: 14px; }
+
+    /* Detail view — single study */
+    #detail-back {
+      display: none;
+      align-items: center; gap: 6px;
+      background: none; border: none; cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px; color: var(--muted);
+      padding: 14px 24px 0;
+      transition: color 0.15s;
+    }
+    #detail-back:hover { color: var(--ink); }
+    #detail-back.visible { display: flex; }
+    #detail-body { padding: 20px 24px; }
     .p-row { margin-bottom: 18px; }
     .p-label {
       font-size: 10px; font-weight: 600; text-transform: uppercase;
@@ -135,8 +163,7 @@
       display: inline-block;
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 4px; padding: 3px 9px;
-      font-size: 12px; margin: 3px 3px 0 0;
-      color: var(--ink2);
+      font-size: 12px; margin: 3px 3px 0 0; color: var(--ink2);
     }
     .ppt-path {
       font-size: 12px; color: var(--muted);
@@ -258,7 +285,11 @@
       <div id="panel-city">—</div>
       <div id="panel-country">—</div>
     </div>
-    <div id="panel-body">
+    <!-- LIST VIEW: multiple studies in same city -->
+    <div id="panel-body"></div>
+    <!-- DETAIL VIEW: single study -->
+    <button id="detail-back" onclick="backToList()">← Back to list</button>
+    <div id="detail-body">
       <div class="p-row">
         <div class="p-label">Case Study Name</div>
         <div class="p-value" id="p-name">—</div>
@@ -291,7 +322,7 @@
 // ═══════════════════════════════════════════════════════════
 //  CONFIGURATION  — edit these two lines
 // ═══════════════════════════════════════════════════════════
-const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSInLYcXsWJSrF00NPxKyMU7fibt7UQ9imBuwvVXxapcsuCSWxVf1Yjp-Lkfki1TeANX6lDmUPIC64x/pub?gid=0&single=true&output=csv";
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSInLYcXsWJSrF00NPxKyMU7fibt7UQ9imBuwvVXxapcsuCSWxVf1Yjp-Lkfki1TeANX6lDmUPIC64x/pub?gid=1530269309&single=true&output=csv";
 const FORM_URL      = "https://forms.gle/JSodQBTWFCRyPAQy5";
 // ═══════════════════════════════════════════════════════════
 
@@ -343,18 +374,34 @@ function projectColor(name) {
   return PROJECT_COLORS[name];
 }
 
-function makeIcon(color) {
+// Dot size scales with number of studies: 14px → up to 40px
+function dotSize(count) {
+  return Math.min(14 + (count - 1) * 7, 40);
+}
+
+// Build a circular marker icon with a count badge
+// color: single project color, or accent for mixed projects
+function makeClusterIcon(count, color) {
+  const size = dotSize(count);
+  const fontSize = size < 22 ? 10 : size < 30 ? 12 : 14;
+  const label = count > 1 ? `<span style="
+    position:absolute;inset:0;display:flex;align-items:center;
+    justify-content:center;color:white;font-weight:600;
+    font-size:${fontSize}px;font-family:'DM Sans',sans-serif;
+    line-height:1;letter-spacing:-0.5px;
+  ">${count}</span>` : '';
   return L.divIcon({
     className: '',
     html: `<div style="
-      width:14px;height:14px;border-radius:50%;
+      position:relative;
+      width:${size}px;height:${size}px;border-radius:50%;
       background:${color};
       border:2.5px solid white;
       box-shadow:0 1px 6px rgba(0,0,0,0.35);
       cursor:pointer;
-      transition:transform .15s;
-    "></div>`,
-    iconSize: [14,14], iconAnchor: [7,7]
+    ">${label}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size/2, size/2]
   });
 }
 
@@ -388,33 +435,95 @@ async function geocode(city, country) {
   return null;
 }
 
-// Rate-limited sequential geocoding queue (Nominatim: max 1 req/sec)
+// Rate-limited sequential geocoding (Nominatim: max 1 req/sec)
 async function geocodeAll(items) {
   const results = [];
   for (let i = 0; i < items.length; i++) {
-    const { row, idx } = items[i];
+    const { row } = items[i];
     const key = `${row['City']}|${row['Country']}`.toLowerCase();
     const cached = geoCache[key];
     if (cached) {
-      results.push({ row, coords: cached, idx });
+      results.push({ row, coords: cached });
     } else {
       document.getElementById('loading-msg').textContent =
         `Locating ${row['City']}… (${i+1}/${items.length})`;
       const coords = await geocode(row['City'], row['Country']);
-      results.push({ row, coords, idx });
-      if (i < items.length - 1) await new Promise(r => setTimeout(r, 1100)); // rate limit
+      results.push({ row, coords });
+      if (i < items.length - 1) await new Promise(r => setTimeout(r, 1100));
     }
   }
   return results;
 }
 
 // ── STATE ────────────────────────────────────────────────────
-let allMarkers = [];
-let activeProject = 'ALL';
+let allRows    = [];   // all geocoded {row, coords}
+let cityMarkers = [];  // currently placed Leaflet markers
+let lastListStudies = null; // for "back" button
+
+// ── RENDER MARKERS ───────────────────────────────────────────
+// Groups rows by city, places one scaled dot per city.
+// Called on load and again whenever a filter changes.
+function renderMarkers(rows) {
+  cityMarkers.forEach(m => map.removeLayer(m));
+  cityMarkers = [];
+
+  // Group by city|country key
+  const groups = {};
+  rows.forEach(({ row, coords }) => {
+    if (!coords) return;
+    const key = `${row['City']}|${row['Country']}`.toLowerCase();
+    if (!groups[key]) groups[key] = { coords, city: row['City'], country: row['Country'], studies: [] };
+    groups[key].studies.push(row);
+  });
+
+  Object.values(groups).forEach(({ coords, city, country, studies }) => {
+    const count = studies.length;
+
+    // If all studies belong to the same project → use that color
+    // If mixed projects → use the dark accent
+    const uniqueProjects = [...new Set(studies.map(s => s['Project']).filter(Boolean))];
+    const color = uniqueProjects.length === 1
+      ? projectColor(uniqueProjects[0])
+      : 'var(--accent)';
+
+    const marker = L.marker([coords.lat, coords.lng], {
+      icon: makeClusterIcon(count, color),
+      zIndexOffset: count * 10 // larger dots appear on top
+    });
+
+    // Hover tooltip
+    const preview = studies.slice(0, 3).map(s => s['Case Study Name']).join('<br>');
+    const more = count > 3 ? `<span style="color:var(--muted);font-size:11px">+ ${count-3} more…</span>` : '';
+    marker.bindPopup(`
+      <div class="mini-popup">
+        <strong>${city}</strong>
+        <small style="display:block;margin:4px 0 6px">${count} case stud${count===1?'y':'ies'}</small>
+        ${preview}${more ? '<br>' + more : ''}
+      </div>`, { closeButton: false, offset: [0, -4] });
+
+    marker.on('mouseover', function() { this.openPopup(); });
+    marker.on('mouseout',  function() { this.closePopup(); });
+    marker.on('click', function() {
+      this.closePopup();
+      if (count === 1) {
+        openDetailPanel(studies[0], projectColor(studies[0]['Project']), false);
+      } else {
+        openListPanel(city, country, studies);
+      }
+    });
+
+    marker.addTo(map);
+    cityMarkers.push(marker);
+  });
+
+  // Count individual case studies (not cities)
+  document.getElementById('count-badge').textContent =
+    `${rows.length} case stud${rows.length===1?'y':'ies'}`;
+}
 
 // ── FILTERS ──────────────────────────────────────────────────
 function buildProjectFilters(projects) {
-  const bar = document.getElementById('filter-bar');
+  const bar   = document.getElementById('filter-bar');
   const badge = document.getElementById('count-badge');
   projects.forEach(p => {
     const color = projectColor(p);
@@ -430,37 +539,78 @@ function buildProjectFilters(projects) {
 function filterProject(btn) {
   document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  activeProject = btn.dataset.project;
-  let count = 0;
-  allMarkers.forEach(({ marker, data }) => {
-    const show = activeProject === 'ALL' || data['Project'] === activeProject;
-    if (show) { marker.addTo(map); count++; }
-    else map.removeLayer(marker);
-  });
-  document.getElementById('count-badge').textContent =
-    `${count} case stud${count===1?'y':'ies'}`;
+  const project = btn.dataset.project;
+  const filtered = project === 'ALL'
+    ? allRows
+    : allRows.filter(({ row }) => row['Project'] === project);
+  renderMarkers(filtered);
   closePanel();
 }
 
-// ── SIDE PANEL ───────────────────────────────────────────────
-function openPanel(data, color) {
+// ── PANEL: LIST MODE (multiple studies in one city) ──────────
+function openListPanel(city, country, studies) {
+  lastListStudies = { city, country, studies };
+  document.getElementById('panel-city').textContent    = city;
+  document.getElementById('panel-country').textContent = country;
+  document.getElementById('detail-back').classList.remove('visible');
+
+  // Build list
+  const body = document.getElementById('panel-body');
+  body.style.display = 'block';
+  document.getElementById('detail-body').style.display = 'none';
+  body.innerHTML = studies.map((s, i) => {
+    const color = projectColor(s['Project']);
+    const topics = (s['Topics'] || '').split(',').slice(0,2).map(t => t.trim()).filter(Boolean);
+    const topicTags = topics.map(t => `<span class="tag" style="font-size:10px;padding:2px 6px">${t}</span>`).join('');
+    return `
+      <div class="study-card" onclick="openDetailPanel(window._studies[${i}], '${color}', true)">
+        <div class="study-card-name">${s['Case Study Name'] || '—'}</div>
+        <div class="study-card-meta">
+          <span class="study-card-project" style="background:${color}">${s['Project'] || '—'}</span>
+          ${topicTags}
+          <span class="study-card-arrow">›</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Expose studies array for inline onclick
+  window._studies = studies;
+  document.getElementById('panel').classList.add('open');
+}
+
+// ── PANEL: DETAIL MODE (single study) ────────────────────────
+function openDetailPanel(data, color, showBack) {
   document.getElementById('panel-city').textContent    = data['City'] || '—';
   document.getElementById('panel-country').textContent = data['Country'] || '—';
-  document.getElementById('p-name').textContent        = data['Case Study Name'] || '—';
 
-  const badge = document.getElementById('p-project');
-  badge.innerHTML = `<span class="p-project-badge" style="background:${color}">${data['Project'] || '—'}</span>`;
+  const backBtn = document.getElementById('detail-back');
+  if (showBack) backBtn.classList.add('visible');
+  else backBtn.classList.remove('visible');
+
+  document.getElementById('panel-body').style.display = 'none';
+  const detailBody = document.getElementById('detail-body');
+  detailBody.style.display = 'block';
+
+  document.getElementById('p-name').textContent = data['Case Study Name'] || '—';
+  document.getElementById('p-project').innerHTML =
+    `<span class="p-project-badge" style="background:${color}">${data['Project'] || '—'}</span>`;
 
   const topics = (data['Topics'] || '').split(',').map(t => t.trim()).filter(Boolean);
   document.getElementById('p-topics').innerHTML =
     topics.length ? topics.map(t => `<span class="tag">${t}</span>`).join('') : '—';
-
   document.getElementById('p-ppt').textContent = data['PPT Path'] || '—';
 
   document.getElementById('panel').classList.add('open');
 }
+
+function backToList() {
+  if (!lastListStudies) return;
+  openListPanel(lastListStudies.city, lastListStudies.country, lastListStudies.studies);
+}
+
 function closePanel() {
   document.getElementById('panel').classList.remove('open');
+  lastListStudies = null;
 }
 
 // ── LOAD DATA ────────────────────────────────────────────────
@@ -473,65 +623,33 @@ function showEmpty() {
 }
 
 async function loadData() {
-  // If URL hasn't been configured yet, show the map with empty state
   if (!SHEET_CSV_URL || SHEET_CSV_URL === 'YOUR_GOOGLE_SHEET_CSV_PUBLISH_URL') {
-    hideLoading();
-    showEmpty();
-    return;
+    hideLoading(); showEmpty(); return;
   }
 
   Papa.parse(SHEET_CSV_URL, {
     download: true, header: true, skipEmptyLines: true,
     complete: async function(results) {
       const rows = results.data.filter(r => r['City'] && r['Country']);
-
-      if (rows.length === 0) {
-        hideLoading();
-        showEmpty();
-        return;
-      }
+      if (rows.length === 0) { hideLoading(); showEmpty(); return; }
 
       // Assign project colours up front
       const projects = [...new Set(rows.map(r => r['Project']).filter(Boolean))];
       projects.forEach(p => projectColor(p));
       buildProjectFilters(projects);
 
-      // Geocode all — map is already visible while this runs
-      const items = rows.map((row, idx) => ({ row, idx }));
-      const geocoded = await geocodeAll(items);
+      // Geocode — map basemap is already visible
+      const geocoded = await geocodeAll(rows.map(row => ({ row })));
+      allRows = geocoded.filter(g => g.coords); // drop any that failed
 
-      // Place markers
-      geocoded.forEach(({ row, coords }) => {
-        if (!coords) return;
-        const color = projectColor(row['Project']);
-        const marker = L.marker([coords.lat, coords.lng], { icon: makeIcon(color) });
-
-        marker.bindPopup(`
-          <div class="mini-popup">
-            <strong>${row['Case Study Name'] || row['City']}</strong>
-            <small>${row['City']}, ${row['Country']}</small>
-            <span class="click-hint">Click dot to see details →</span>
-          </div>`, { closeButton: false, offset: [0, -4] });
-
-        marker.on('mouseover', function() { this.openPopup(); });
-        marker.on('mouseout',  function() { this.closePopup(); });
-        marker.on('click', function() { openPanel(row, color); });
-
-        marker.addTo(map);
-        allMarkers.push({ marker, data: row });
-      });
-
-      const total = allMarkers.length;
-      document.getElementById('count-badge').textContent =
-        `${total} case stud${total===1?'y':'ies'}`;
+      renderMarkers(allRows);
       hideLoading();
-      if (total === 0) showEmpty();
+      if (allRows.length === 0) showEmpty();
     },
     error: function(err) {
       console.error('PapaParse error', err);
       document.getElementById('loading-msg').textContent =
         '⚠ Could not load data. Check your Sheet URL is published as CSV.';
-      // Still hide spinner and let basemap be usable
       setTimeout(hideLoading, 3000);
     }
   });
