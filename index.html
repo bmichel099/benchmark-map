@@ -165,6 +165,20 @@
       border-radius: 4px; padding: 3px 9px;
       font-size: 12px; margin: 3px 3px 0 0; color: var(--ink2);
     }
+    /* clickable topic tags in detail panel */
+    .tag.clickable {
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tag.clickable:hover {
+      background: var(--accent); border-color: var(--accent);
+      color: var(--white);
+    }
+    .tag.active-topic {
+      background: var(--accent); border-color: var(--accent);
+      color: var(--white); font-weight: 600;
+    }
+    .tag.clickable::after { content: ' ↗'; font-size: 10px; opacity: 0.6; }
     .ppt-path {
       font-size: 12px; color: var(--muted);
       background: var(--surface); border: 1px solid var(--border);
@@ -255,10 +269,8 @@
 
 <!-- FILTER BAR -->
 <div id="filter-bar">
-  <span id="filter-label">Project</span>
-  <button class="pill active" data-project="ALL" onclick="filterProject(this)">
-    <span class="dot" style="background:#666"></span> All
-  </button>
+  <span id="filter-label">Topic</span>
+  <button class="pill active" data-topic="ALL" onclick="activateTopicFilter('ALL', this)">All</button>
   <!-- project pills injected here -->
   <span id="count-badge">— case studies</span>
 </div>
@@ -333,9 +345,9 @@ document.getElementById('add-btn').href = FORM_URL;
 const map = L.map('map', { zoomControl: false }).setView([20, 10], 2);
 L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-// Primary tile layer (CartoDB light)
+// Primary tile layer (CartoDB Voyager — modern, clean)
 const primaryTiles = L.tileLayer(
-  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
   { attribution: '© <a href="https://www.openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>', maxZoom: 19 }
 );
 // Fallback tile layer (OpenStreetMap) in case CartoDB is blocked
@@ -456,18 +468,18 @@ async function geocodeAll(items) {
 }
 
 // ── STATE ────────────────────────────────────────────────────
-let allRows    = [];   // all geocoded {row, coords}
-let cityMarkers = [];  // currently placed Leaflet markers
-let lastListStudies = null; // for "back" button
+let allRows       = [];  // all geocoded {row, coords}
+let cityMarkerData = []; // {marker, topicSet, studies, city, country}
+let activeTopic   = 'ALL';
+let lastListStudies = null;
 
 // ── RENDER MARKERS ───────────────────────────────────────────
-// Groups rows by city, places one scaled dot per city.
-// Called on load and again whenever a filter changes.
+// Always renders all cities. Topic highlight dims non-matching ones.
 function renderMarkers(rows) {
-  cityMarkers.forEach(m => map.removeLayer(m));
-  cityMarkers = [];
+  cityMarkerData.forEach(({ marker }) => map.removeLayer(marker));
+  cityMarkerData = [];
 
-  // Group by city|country key
+  // Group all rows by city|country
   const groups = {};
   rows.forEach(({ row, coords }) => {
     if (!coords) return;
@@ -479,91 +491,111 @@ function renderMarkers(rows) {
   Object.values(groups).forEach(({ coords, city, country, studies }) => {
     const count = studies.length;
 
-    // If all studies belong to the same project → use that color
-    // If mixed projects → use the dark accent
+    // Collect all topics this city covers
+    const topicSet = new Set();
+    studies.forEach(s => {
+      (s['Topics covered (comma-separated)'] || '').split(',')
+        .map(t => t.trim()).filter(Boolean).forEach(t => topicSet.add(t));
+    });
+
+    // Color by project (single project = that color, mixed = accent)
     const uniqueProjects = [...new Set(studies.map(s => s['Associated project']).filter(Boolean))];
-    const color = uniqueProjects.length === 1
-      ? projectColor(uniqueProjects[0])
-      : 'var(--accent)';
+    const color = uniqueProjects.length === 1 ? projectColor(uniqueProjects[0]) : '#2b2b5e';
 
     const marker = L.marker([coords.lat, coords.lng], {
       icon: makeClusterIcon(count, color),
-      zIndexOffset: count * 10 // larger dots appear on top
+      zIndexOffset: count * 10
     });
 
-    // Hover tooltip
     const preview = studies.slice(0, 3).map(s => s['Case study name']).join('<br>');
-    const more = count > 3 ? `<span style="color:var(--muted);font-size:11px">+ ${count-3} more…</span>` : '';
+    const more    = count > 3 ? `<br><span style="color:var(--muted);font-size:11px">+ ${count-3} more…</span>` : '';
     marker.bindPopup(`
       <div class="mini-popup">
         <strong>${city}</strong>
         <small style="display:block;margin:4px 0 6px">${count} case stud${count===1?'y':'ies'}</small>
-        ${preview}${more ? '<br>' + more : ''}
+        ${preview}${more}
       </div>`, { closeButton: false, offset: [0, -4] });
 
     marker.on('mouseover', function() { this.openPopup(); });
     marker.on('mouseout',  function() { this.closePopup(); });
     marker.on('click', function() {
       this.closePopup();
-      if (count === 1) {
-        openDetailPanel(studies[0], projectColor(studies[0]['Associated project']), false);
-      } else {
-        openListPanel(city, country, studies);
-      }
+      if (count === 1) openDetailPanel(studies[0], projectColor(studies[0]['Associated project']), false);
+      else openListPanel(city, country, studies);
     });
 
     marker.addTo(map);
-    cityMarkers.push(marker);
+    cityMarkerData.push({ marker, topicSet, studies, city, country });
   });
 
-  // Count individual case studies (not cities)
   document.getElementById('count-badge').textContent =
     `${rows.length} case stud${rows.length===1?'y':'ies'}`;
+
+  // Re-apply any active topic highlight
+  applyTopicHighlight(activeTopic);
 }
 
-// ── FILTERS ──────────────────────────────────────────────────
-function buildProjectFilters(projects) {
+// Dim markers whose cities don't cover the active topic
+function applyTopicHighlight(topic) {
+  activeTopic = topic;
+  cityMarkerData.forEach(({ marker, topicSet }) => {
+    const matches = topic === 'ALL' || topicSet.has(topic);
+    const el = marker.getElement();
+    if (el) el.style.opacity = matches ? '1' : '0.15';
+  });
+}
+
+// ── TOPIC FILTERS ─────────────────────────────────────────────
+function buildTopicFilters(topics) {
   const bar   = document.getElementById('filter-bar');
   const badge = document.getElementById('count-badge');
-  projects.forEach(p => {
-    const color = projectColor(p);
+  topics.sort().forEach(t => {
     const btn = document.createElement('button');
     btn.className = 'pill';
-    btn.dataset.project = p;
-    btn.innerHTML = `<span class="dot" style="background:${color}"></span> ${p}`;
-    btn.onclick = () => filterProject(btn);
+    btn.dataset.topic = t;
+    btn.textContent = t;
+    btn.onclick = () => activateTopicFilter(t, btn);
     bar.insertBefore(btn, badge);
   });
 }
 
-function filterProject(btn) {
+function activateTopicFilter(topic, btn) {
+  // Toggle off if already active
+  if (activeTopic === topic) {
+    activeTopic = 'ALL';
+    document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+    document.querySelector('.pill[data-topic="ALL"]').classList.add('active');
+    applyTopicHighlight('ALL');
+    // Clear active-topic highlight on panel tags too
+    document.querySelectorAll('.tag.active-topic').forEach(t => t.classList.remove('active-topic'));
+    return;
+  }
   document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  const project = btn.dataset.project;
-  const filtered = project === 'ALL'
-    ? allRows
-    : allRows.filter(({ row }) => row['Associated project'] === project);
-  renderMarkers(filtered);
-  closePanel();
+  if (btn) btn.classList.add('active');
+  applyTopicHighlight(topic);
+  // Sync active state on any visible panel topic tags
+  document.querySelectorAll('.tag.clickable').forEach(t => {
+    t.classList.toggle('active-topic', t.dataset.topic === topic);
+  });
 }
 
-// ── PANEL: LIST MODE (multiple studies in one city) ──────────
+// ── PANEL: LIST MODE ─────────────────────────────────────────
 function openListPanel(city, country, studies) {
   lastListStudies = { city, country, studies };
   document.getElementById('panel-city').textContent    = city;
   document.getElementById('panel-country').textContent = country;
   document.getElementById('detail-back').classList.remove('visible');
 
-  // Build list
   const body = document.getElementById('panel-body');
   body.style.display = 'block';
   document.getElementById('detail-body').style.display = 'none';
   body.innerHTML = studies.map((s, i) => {
-    const color = projectColor(s['Associated project']);
+    const color  = projectColor(s['Associated project']);
     const topics = (s['Topics covered (comma-separated)'] || '').split(',').slice(0,2).map(t => t.trim()).filter(Boolean);
-    const topicTags = topics.map(t => `<span class="tag" style="font-size:10px;padding:2px 6px">${t}</span>`).join('');
+    const topicTags = topics.map(t =>
+      `<span class="tag" style="font-size:10px;padding:2px 6px">${t}</span>`).join('');
     return `
-      <div class="study-card" onclick="openDetailPanel(window._studies[${i}], '${color}', true)">
+      <div class="study-card" onclick="openDetailPanel(window._studies[${i}],'${color}',true)">
         <div class="study-card-name">${s['Case study name'] || '—'}</div>
         <div class="study-card-meta">
           <span class="study-card-project" style="background:${color}">${s['Associated project'] || '—'}</span>
@@ -573,33 +605,36 @@ function openListPanel(city, country, studies) {
       </div>`;
   }).join('');
 
-  // Expose studies array for inline onclick
   window._studies = studies;
   document.getElementById('panel').classList.add('open');
 }
 
-// ── PANEL: DETAIL MODE (single study) ────────────────────────
+// ── PANEL: DETAIL MODE ───────────────────────────────────────
 function openDetailPanel(data, color, showBack) {
   document.getElementById('panel-city').textContent    = data['City'] || '—';
   document.getElementById('panel-country').textContent = data['Country'] || '—';
 
   const backBtn = document.getElementById('detail-back');
-  if (showBack) backBtn.classList.add('visible');
-  else backBtn.classList.remove('visible');
+  backBtn.classList.toggle('visible', !!showBack);
 
-  document.getElementById('panel-body').style.display = 'none';
-  const detailBody = document.getElementById('detail-body');
-  detailBody.style.display = 'block';
+  document.getElementById('panel-body').style.display  = 'none';
+  document.getElementById('detail-body').style.display = 'block';
 
   document.getElementById('p-name').textContent = data['Case study name'] || '—';
   document.getElementById('p-project').innerHTML =
     `<span class="p-project-badge" style="background:${color}">${data['Associated project'] || '—'}</span>`;
 
   const topics = (data['Topics covered (comma-separated)'] || '').split(',').map(t => t.trim()).filter(Boolean);
-  document.getElementById('p-topics').innerHTML =
-    topics.length ? topics.map(t => `<span class="tag">${t}</span>`).join('') : '—';
-  document.getElementById('p-ppt').textContent = data['PPT path on server'] || '—';
+  document.getElementById('p-topics').innerHTML = topics.length
+    ? topics.map(t => `
+        <span class="tag clickable${activeTopic===t?' active-topic':''}"
+              data-topic="${t}"
+              onclick="activateTopicFilter('${t}', document.querySelector('.pill[data-topic=\\'${t}\\']'))"
+              title="Highlight all case studies on this topic">${t}</span>`
+      ).join('')
+    : '—';
 
+  document.getElementById('p-ppt').textContent = data['PPT path on server'] || '—';
   document.getElementById('panel').classList.add('open');
 }
 
@@ -614,9 +649,7 @@ function closePanel() {
 }
 
 // ── LOAD DATA ────────────────────────────────────────────────
-function hideLoading() {
-  document.getElementById('loading').classList.add('hidden');
-}
+function hideLoading() { document.getElementById('loading').classList.add('hidden'); }
 function showEmpty() {
   document.getElementById('empty-state').classList.add('visible');
   document.getElementById('count-badge').textContent = '0 case studies';
@@ -633,14 +666,22 @@ async function loadData() {
       const rows = results.data.filter(r => r['City'] && r['Country']);
       if (rows.length === 0) { hideLoading(); showEmpty(); return; }
 
-      // Assign project colours up front
+      // Collect all unique topics across every case study
+      const topicSet = new Set();
+      rows.forEach(r => {
+        (r['Topics covered (comma-separated)'] || '').split(',')
+          .map(t => t.trim()).filter(Boolean).forEach(t => topicSet.add(t));
+      });
+
+      // Assign project colours (still used for dot coloring)
       const projects = [...new Set(rows.map(r => r['Associated project']).filter(Boolean))];
       projects.forEach(p => projectColor(p));
-      buildProjectFilters(projects);
 
-      // Geocode — map basemap is already visible
+      buildTopicFilters([...topicSet]);
+
+      // Geocode
       const geocoded = await geocodeAll(rows.map(row => ({ row })));
-      allRows = geocoded.filter(g => g.coords); // drop any that failed
+      allRows = geocoded.filter(g => g.coords);
 
       renderMarkers(allRows);
       hideLoading();
